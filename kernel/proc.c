@@ -273,6 +273,7 @@ fork(void)
     release(&np->lock);
     return -1;
   }
+  np->mask = p->mask;
   np->sz = p->sz;
 
   np->parent = p;
@@ -692,4 +693,14 @@ procdump(void)
     printf("%d %s %s", p->pid, state, p->name);
     printf("\n");
   }
+}
+
+int
+proccount(void)
+{
+  int count = 0;
+  for(int i = 0; i < NPROC; i++){
+    count += proc[i].state != UNUSED;
+  }
+  return count;
 }
