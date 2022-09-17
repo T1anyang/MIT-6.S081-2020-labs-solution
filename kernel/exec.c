@@ -51,6 +51,9 @@ exec(char *path, char **argv)
     uint64 sz1;
     if((sz1 = uvmalloc(pagetable, sz, ph.vaddr + ph.memsz)) == 0)
       goto bad;
+    if(sz1 >= PLIC){
+      goto bad;
+    }
     sz = sz1;
     if(ph.vaddr % PGSIZE != 0)
       goto bad;
@@ -97,6 +100,12 @@ exec(char *path, char **argv)
   if(copyout(pagetable, sp, (char *)ustack, (argc+1)*sizeof(uint64)) < 0)
     goto bad;
 
+  uvmunmap(p->kpagetable, 0, PGROUNDUP(oldsz)/PGSIZE, 0);
+  for(uint64 va = 0; va < sz; va += PGSIZE){
+    pte_t *pte = walk(pagetable, va, 0);
+    mappages(p->kpagetable, va, PGSIZE, PTE2PA(*pte), PTE_FLAGS(*pte) & (~PTE_U));
+  }
+
   // arguments to user main(argc, argv)
   // argc is returned via the system call return
   // value, which goes in a0.
@@ -107,7 +116,7 @@ exec(char *path, char **argv)
     if(*s == '/')
       last = s+1;
   safestrcpy(p->name, last, sizeof(p->name));
-    
+  
   // Commit to the user image.
   oldpagetable = p->pagetable;
   p->pagetable = pagetable;
@@ -116,11 +125,10 @@ exec(char *path, char **argv)
   p->trapframe->sp = sp; // initial stack pointer
   proc_freepagetable(oldpagetable, oldsz);
   if(p->pid==1) vmprint(p->pagetable, 0, 3);
-  kvmmapuser(p->pid, p->kpagetable, p->pagetable, p->sz, 0);
-
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 
  bad:
+  printf("bad\n");
   if(pagetable)
     proc_freepagetable(pagetable, sz);
   if(ip){
