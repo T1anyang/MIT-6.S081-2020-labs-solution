@@ -93,7 +93,7 @@ int             growproc(int);
 pagetable_t     proc_pagetable(struct proc *);
 pagetable_t     proc_kpagetable(struct proc *);
 void            proc_freepagetable(pagetable_t, uint64);
-void            proc_freekpagetable(struct proc *, uint64);
+void            proc_freekpagetable(pagetable_t, uint64, uint64);
 int             kill(int);
 struct cpu*     mycpu(void);
 struct cpu*     getmycpu(void);
@@ -176,6 +176,7 @@ uint64          uvmdealloc(pagetable_t, uint64, uint64);
 int             uvmcopy(pagetable_t, pagetable_t, uint64);
 #endif
 void            uvmfree(pagetable_t, uint64);
+void            kvmfree(pagetable_t, uint64);
 void            uvmunmap(pagetable_t, uint64, uint64, int);
 void            uvmclear(pagetable_t, uint64);
 uint64          walkaddr(pagetable_t, uint64);
@@ -183,6 +184,8 @@ int             copyout(pagetable_t, uint64, char *, uint64);
 int             copyin(pagetable_t, char *, uint64, uint64);
 int             copyinstr(pagetable_t, char *, uint64, uint64);
 void            vmprint(pagetable_t, int, int);
+int             vmcppagetablecheck(pagetable_t, pagetable_t, uint64, uint64);
+void            vmcppagetable(pagetable_t, pagetable_t, uint64, uint64);
 
 // vmcopyin.c
 int copyin_new(pagetable_t, char *, uint64, uint64);

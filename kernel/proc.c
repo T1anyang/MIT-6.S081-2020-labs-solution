@@ -134,6 +134,7 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
+  // printf("alloc: pid: %d, name: %s\n", p->pid, p->name);
 
   return p;
 }
@@ -144,14 +145,16 @@ found:
 static void
 freeproc(struct proc *p)
 {
+  // printf("free: pid: %d, name: %s\n", p->pid, p->name);
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+  vmcppagetablecheck(p->pagetable, p->kpagetable, 0, p->sz);
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
   if(p->kpagetable){
-    proc_freekpagetable(p, p->sz);
+    proc_freekpagetable(p->kpagetable, p->kstack, p->sz);
   }
   p->kpagetable = 0;
   p->sz = 0;
@@ -212,7 +215,7 @@ proc_kpagetable(struct proc *p)
   // vmprint(pagetable, 0, 2);
   mappages(pagetable, va, PGSIZE, (uint64)pa, PTE_R | PTE_W);
   p->kstack = va;
-  // printf("pagetable: %p\n", pagetable);
+  // printf("kpagetable: %p\n", pagetable);
   return pagetable;
 }
 
@@ -227,13 +230,12 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
 }
 
 void
-proc_freekpagetable(struct proc *p, uint64 sz)
+proc_freekpagetable(pagetable_t kpagetable, uint64 kstack, uint64 sz)
 {
-  // vmprint(p->kpagetable, 0, 1);
-  kpagetable_unmap(p->kpagetable);
-  // vmprint(p->kpagetable, 0, 1);
-  uvmunmap(p->kpagetable, p->kstack, 1, 1);
-  uvmfree(p->kpagetable, 0);
+  kpagetable_unmap(kpagetable);
+  // free kstack
+  uvmunmap(kpagetable, kstack, 1, 1);
+  kvmfree(kpagetable, sz);
 }
 
 // a user program that calls exec("/init")
@@ -262,6 +264,7 @@ userinit(void)
   uvminit(p->pagetable, initcode, sizeof(initcode));
   // do the same map in kernel pagetable
   p->sz = PGSIZE;
+  vmcppagetable(p->pagetable, p->kpagetable, 0, p->sz);
 
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
@@ -291,6 +294,7 @@ growproc(int n)
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
   }
+  vmcppagetable(p->pagetable, p->kpagetable, p->sz, sz);
   p->sz = sz;
   return 0;
 }
@@ -317,6 +321,8 @@ fork(void)
   }
   np->sz = p->sz;
   np->parent = p;
+
+  vmcppagetable(np->pagetable, np->kpagetable, 0, np->sz);
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);

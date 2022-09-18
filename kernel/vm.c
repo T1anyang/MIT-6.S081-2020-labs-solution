@@ -24,7 +24,9 @@ void
 kvminit()
 {
   kernel_pagetable = kpagetable_create();
-  // vmprint(kernel_pagetable, 0);
+  // CLINT
+  if(mappages(kernel_pagetable, CLINT, 0x10000, CLINT, PTE_R | PTE_W) != 0)
+    panic("kvmmap");
 }
 
 pagetable_t kpagetable_create()
@@ -38,10 +40,6 @@ pagetable_t kpagetable_create()
 
   // virtio mmio disk interface
   if(mappages(pagetable, VIRTIO0, PGSIZE, VIRTIO0, PTE_R | PTE_W) != 0)
-    panic("kvmmap");
-
-  // CLINT
-  if(mappages(pagetable, CLINT, 0x10000, CLINT, PTE_R | PTE_W) != 0)
     panic("kvmmap");
 
   // PLIC
@@ -67,7 +65,6 @@ pagetable_t kpagetable_create()
 void kpagetable_unmap(pagetable_t pagetable){
   uvmunmap(pagetable, UART0, 1, 0);
   uvmunmap(pagetable, VIRTIO0, 1, 0);
-  uvmunmap(pagetable, CLINT, 0x10000/PGSIZE, 0);
   uvmunmap(pagetable, PLIC, 0x400000/PGSIZE, 0);
   uvmunmap(pagetable, KERNBASE, ((uint64)etext-KERNBASE)/PGSIZE, 0);
   uvmunmap(pagetable, (uint64)etext, (PHYSTOP-(uint64)etext)/PGSIZE, 0);
@@ -210,8 +207,9 @@ uvmunmap(pagetable_t pagetable, uint64 va, uint64 npages, int do_free)
   for(a = va; a < va + npages*PGSIZE; a += PGSIZE){
     if((pte = walk(pagetable, a, 0)) == 0)
       panic("uvmunmap: walk");
-    if((*pte & PTE_V) == 0)
-      panic("uvmunmap: not mapped");
+    if((*pte & PTE_V) == 0){
+      printf("pgtb: %p, %p->%p\n", pagetable, a, PTE2PA(*pte));
+      panic("uvmunmap: not mapped");}
     if(PTE_FLAGS(*pte) == PTE_V)
       panic("uvmunmap: not a leaf");
     if(do_free){
@@ -327,6 +325,16 @@ uvmfree(pagetable_t pagetable, uint64 sz)
   freewalk(pagetable);
 }
 
+// unmap kernel memory pages,
+// then free page-table pages.
+void
+kvmfree(pagetable_t pagetable, uint64 sz)
+{
+  if(sz > 0)
+    uvmunmap(pagetable, 0, PGROUNDUP(sz)/PGSIZE, 0);
+  freewalk(pagetable);
+}
+
 // Given a parent process's page table, copy
 // its memory into a child's page table.
 // Copies both the page table and the
@@ -407,23 +415,7 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
-  uint64 n, va0, pa0;
-
-  while(len > 0){
-    va0 = PGROUNDDOWN(srcva);
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
-      return -1;
-    n = PGSIZE - (srcva - va0);
-    if(n > len)
-      n = len;
-    memmove(dst, (void *)(pa0 + (srcva - va0)), n);
-
-    len -= n;
-    dst += n;
-    srcva = va0 + PGSIZE;
-  }
-  return 0;
+  return copyin_new(pagetable, dst, srcva, len);
 }
 
 // Copy a null-terminated string from user to kernel.
@@ -433,40 +425,7 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 int
 copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 {
-  uint64 n, va0, pa0;
-  int got_null = 0;
-
-  while(got_null == 0 && max > 0){
-    va0 = PGROUNDDOWN(srcva);
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
-      return -1;
-    n = PGSIZE - (srcva - va0);
-    if(n > max)
-      n = max;
-
-    char *p = (char *) (pa0 + (srcva - va0));
-    while(n > 0){
-      if(*p == '\0'){
-        *dst = '\0';
-        got_null = 1;
-        break;
-      } else {
-        *dst = *p;
-      }
-      --n;
-      --max;
-      p++;
-      dst++;
-    }
-
-    srcva = va0 + PGSIZE;
-  }
-  if(got_null){
-    return 0;
-  } else {
-    return -1;
-  }
+  return copyinstr_new(pagetable, dst, srcva, max);
 }
 
 void vmprint(pagetable_t pagetable, int depth, int maxdepth){
@@ -490,5 +449,42 @@ void vmprint(pagetable_t pagetable, int depth, int maxdepth){
       printf("%d: pte %p pa %p\n", i, pte, pa);
       vmprint(pa, depth+1, maxdepth);
     }
+  }
+}
+
+#define DEBUG 0
+
+int vmcppagetablecheck(pagetable_t upagetable, pagetable_t kpagetable, uint64 oldsz, uint64 sz){
+  uint64 va = 0;
+  for(va  = PGROUNDUP(oldsz); va < sz; va += PGSIZE){
+    pte_t *upte = walk(upagetable, va, 0);
+    pte_t *kpte = walk(kpagetable, va, 0);
+    if(PTE2PA(*upte) != PTE2PA(*kpte)){
+      panic("vmcppagetablecheck: failed");
+    }
+  }
+  return 0;
+}
+
+void vmcppagetable(pagetable_t upagetable, pagetable_t kpagetable, uint64 oldsz, uint64 sz){
+  if(oldsz < sz){
+    for(uint64 va = PGROUNDUP(oldsz); va < sz; va += PGSIZE){
+      if(va >= PLIC){
+        panic("vmcppagetable: memory exhausted.");
+      }
+      pte_t *upte = walk(upagetable, va, 0);
+      pte_t *kpte = walk(kpagetable, va, 1);
+      *kpte = *upte;
+      *kpte &= ~PTE_U;
+    }
+  }
+  if(oldsz > sz){
+    if(PGROUNDUP(sz) < PGROUNDUP(oldsz)){
+      int npages = (PGROUNDUP(oldsz) - PGROUNDUP(sz)) / PGSIZE;
+      uvmunmap(kpagetable, PGROUNDUP(sz), npages, 0);
+    }
+  }
+  if(DEBUG){
+    vmcppagetablecheck(upagetable, kpagetable, oldsz, sz);
   }
 }
