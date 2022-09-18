@@ -100,12 +100,6 @@ exec(char *path, char **argv)
   if(copyout(pagetable, sp, (char *)ustack, (argc+1)*sizeof(uint64)) < 0)
     goto bad;
 
-  uvmunmap(p->kpagetable, 0, PGROUNDUP(oldsz)/PGSIZE, 0);
-  for(uint64 va = 0; va < sz; va += PGSIZE){
-    pte_t *pte = walk(pagetable, va, 0);
-    mappages(p->kpagetable, va, PGSIZE, PTE2PA(*pte), PTE_FLAGS(*pte) & (~PTE_U));
-  }
-
   // arguments to user main(argc, argv)
   // argc is returned via the system call return
   // value, which goes in a0.
@@ -128,7 +122,7 @@ exec(char *path, char **argv)
   return argc; // this ends up in a0, the first argument to main(argc, argv)
 
  bad:
-  printf("bad\n");
+  // printf("bad\n");
   if(pagetable)
     proc_freepagetable(pagetable, sz);
   if(ip){

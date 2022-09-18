@@ -231,9 +231,9 @@ proc_freekpagetable(struct proc *p, uint64 sz)
 {
   // vmprint(p->kpagetable, 0, 1);
   kpagetable_unmap(p->kpagetable);
-  vmprint(p->kpagetable, 0, 1);
+  // vmprint(p->kpagetable, 0, 1);
   uvmunmap(p->kpagetable, p->kstack, 1, 1);
-  uvmfree(p->kpagetable, sz);
+  uvmfree(p->kpagetable, 0);
 }
 
 // a user program that calls exec("/init")
@@ -261,8 +261,6 @@ userinit(void)
   // and data into it.
   uvminit(p->pagetable, initcode, sizeof(initcode));
   // do the same map in kernel pagetable
-  uint64 pa = walkaddr(p->pagetable, 0);
-  mappages(p->kpagetable, 0, PGSIZE, pa, PTE_W|PTE_R|PTE_X);
   p->sz = PGSIZE;
 
   // prepare for the very first "return" from kernel to user.
@@ -286,23 +284,12 @@ growproc(int n)
   struct proc *p = myproc();
 
   sz = p->sz;
-  uint oldsz = PGROUNDUP(sz);
   if(n > 0){
     if((sz = uvmalloc(p->pagetable, sz, sz + n)) == 0) {
       return -1;
     }
-    for(uint64 va = oldsz; va < sz; va+=PGSIZE){
-      pte_t *pte = walk(p->pagetable, va, 0);
-      // printf("map pages va: %p\n", va);
-      mappages(p->kpagetable, va, PGSIZE, PTE2PA(*pte), PTE_FLAGS(*pte) & (~PTE_U));
-    }
-    
   } else if(n < 0){
     sz = uvmdealloc(p->pagetable, sz, sz + n);
-    if(PGROUNDUP(sz) < oldsz){
-      int npages = (oldsz - PGROUNDUP(sz)) / PGSIZE;
-      uvmunmap(p->kpagetable, PGROUNDUP(sz), npages, 1);
-    }
   }
   p->sz = sz;
   return 0;
@@ -329,10 +316,6 @@ fork(void)
     return -1;
   }
   np->sz = p->sz;
-  for(uint64 va = 0; va < p->sz; va += PGSIZE){
-    pte_t *pte = walk(np->pagetable, va, 0);
-    mappages(np->kpagetable, va, PGSIZE, PTE2PA(*pte), PTE_FLAGS(*pte) & (~PTE_U));
-  }
   np->parent = p;
 
   // copy saved user registers.
