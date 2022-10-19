@@ -2,9 +2,7 @@
 
 操作系统课程MIT 6.S081, labs的解决思路及实现方案
 
-
-<a href="
-https://pdos.csail.mit.edu/6.828/2020/schedule.html">课程资源</a>
+课程资源: https://pdos.csail.mit.edu/6.828/2020/schedule.html
 
 # my implementation
 
