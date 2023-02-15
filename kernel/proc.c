@@ -113,7 +113,7 @@ found:
     return 0;
   }
 
-// Allocate a saved trapframe page.
+  // Allocate a saved trapframe page.
   if((p->saved_trapframe = (struct trapframe *)kalloc()) == 0){
     release(&p->lock);
     return 0;

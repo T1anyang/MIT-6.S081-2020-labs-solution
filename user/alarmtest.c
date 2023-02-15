@@ -62,7 +62,6 @@ test0()
 
 void __attribute__ ((noinline)) foo(int i, int *j) {
   if((i % 2500000) == 0) {
-    write(2, "foo", 3);
     write(2, ".", 1);
   }
   *j += 1;
@@ -101,7 +100,6 @@ test1()
     // occurred; another is that that registers may not be
     // restored correctly, causing i or j or the address ofj
     // to get an incorrect value.
-    printf("%d %d\n", i, j);
     printf("\ntest1 failed: foo() executed fewer times than it was called\n");
   } else {
     printf("test1 passed\n");

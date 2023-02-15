@@ -1,0 +1,20 @@
+Q: Which registers contain arguments to functions? For example, which register holds 13 in main's call to printf?
+A: a0-a7, a2
+
+Q: Where is the call to function f in the assembly code for main? Where is the call to g? (Hint: the compiler may inline functions.)
+A: no call.
+
+Q: At what address is the function printf located?
+A: 0x628
+
+Q:What value is in the register ra just after the jalr to printf in main?
+A: 0x30
+
+Q: Run the following code.
+
+	unsigned int i = 0x00646c72;
+	printf("H%x Wo%s", 57616, &i);
+      
+What is the output?
+
+A: He110 World
