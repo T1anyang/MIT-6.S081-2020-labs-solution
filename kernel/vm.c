@@ -376,12 +376,14 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
         printf("copyout: kalloc failed\n");
         return -1;
       }
-      memset((void*)pa0, 0, PGSIZE);
-      if(mappages(p->pagetable, va0, PGSIZE, pa0, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
-        kfree((void*)pa0);
-        p->killed = 1;
-        printf("copyout: mappages failed\n");
-        return -1;
+      else{
+        memset((void*)pa0, 0, PGSIZE);
+        if(mappages(p->pagetable, va0, PGSIZE, pa0, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
+          kfree((void*)pa0);
+          p->killed = 1;
+          printf("copyout: mappages failed\n");
+          return -1;
+        }
       }
     }
     n = PGSIZE - (dstva - va0);
@@ -417,12 +419,14 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
         printf("copyin: kalloc failed\n");
         return -1;
       }
-      memset((void*)pa0, 0, PGSIZE);
-      if(mappages(p->pagetable, va0, PGSIZE, pa0, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
-        kfree((void*)pa0);
-        p->killed = 1;
-        printf("copyin: mappages failed\n");
-        return -1;
+      else{
+        memset((void*)pa0, 0, PGSIZE);
+        if(mappages(p->pagetable, va0, PGSIZE, pa0, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
+          kfree((void*)pa0);
+          p->killed = 1;
+          printf("copyout: mappages failed\n");
+          return -1;
+        }
       }
     }
     n = PGSIZE - (srcva - va0);
@@ -461,12 +465,14 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
         printf("copyout: kalloc failed\n");
         return -1;
       }
-      memset((void*)pa0, 0, PGSIZE);
-      if(mappages(p->pagetable, va0, PGSIZE, pa0, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
-        kfree((void*)pa0);
-        p->killed = 1;
-        printf("copyout: mappages failed\n");
-        return -1;
+      else{
+        memset((void*)pa0, 0, PGSIZE);
+        if(mappages(p->pagetable, va0, PGSIZE, pa0, PTE_W|PTE_X|PTE_R|PTE_U) != 0){
+          kfree((void*)pa0);
+          p->killed = 1;
+          printf("copyout: mappages failed\n");
+          return -1;
+        }
       }
     }
     n = PGSIZE - (srcva - va0);
