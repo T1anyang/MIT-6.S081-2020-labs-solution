@@ -5,6 +5,8 @@
 #include "riscv.h"
 #include "defs.h"
 #include "fs.h"
+#include "spinlock.h"
+#include "proc.h"
 
 /*
  * the kernel's page table.
@@ -299,6 +301,24 @@ uvmfree(pagetable_t pagetable, uint64 sz)
   freewalk(pagetable);
 }
 
+// re-alloc a new page for va
+// used for copy-on-write fork
+void*
+uvmrealloc(pagetable_t pagetable, uint64 va, pte_t *pte)
+{
+  uint64 pa = PTE2PA(*pte);
+  void *mem = kalloc();
+  if(!mem){
+    return 0;
+  }
+  *pte = PA2PTE(mem) | PTE_FLAGS(*pte) | PTE_W;
+  if(ksubpacount(pa) == -1){
+    panic("uvmrealloc");
+  }
+  memmove(mem, (void *)pa, PGSIZE);
+  return mem;
+}
+
 // Given a parent process's page table, copy
 // its memory into a child's page table.
 // Copies both the page table and the
@@ -311,7 +331,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
+  // char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -319,12 +339,24 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
-    flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
+    kacquirelock();
+    int ret = kaddpacount(pa);
+    kreleaselock();
+    if(ret == 0){
+      printf("add page count failed\n");
       goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+    }
+    if(*pte & PTE_W){
+      *pte |= PTE_FW;
+    }
+    *pte &= (~PTE_W);
+    flags = PTE_FLAGS(*pte);
+    // if((mem = kalloc()) == 0)
+    //   goto err;
+    // memmove(mem, (char*)pa, PGSIZE);
+    if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0){
+      printf("mappages failed");
+      // kfree(mem);
       goto err;
     }
   }
@@ -355,12 +387,43 @@ int
 copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 {
   uint64 n, va0, pa0;
-
+  struct proc* p = myproc();
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
-    pa0 = walkaddr(pagetable, va0);
+    if(va0 >= MAXVA)
+      return -1;
+    pte_t* pte = walk(pagetable, va0, 0);
+    if(pte == 0)
+      return -1;
+    pa0 = PTE2PA(*pte);
     if(pa0 == 0)
       return -1;
+    if(!(*pte & PTE_W)){
+      if(dstva >= p->sz) {
+        return -1;
+      }
+      if(!(*pte & PTE_FW)){
+        printf("write on read-only addr: %p\n", va0);
+        return -1;
+      }
+      else{
+        kacquirelock();
+        uint8 count = kpacount(pa0);
+        if(count == 1){
+          *pte |= PTE_W;
+        }
+        else if(count > 1){
+          // printf("count %d pa %p\n", count, pa0);
+          if((pa0 = (uint64)uvmrealloc(pagetable, va0, pte)) == 0){
+            return -1;
+          }
+        }
+        else{
+          panic("copyout: invalid pa");
+        }
+        kreleaselock();
+      }
+    }
     n = PGSIZE - (dstva - va0);
     if(n > len)
       n = len;

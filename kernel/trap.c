@@ -65,6 +65,36 @@ usertrap(void)
     intr_on();
 
     syscall();
+  } else if(r_scause() == 0xc || r_scause() == 0xf){
+    uint64 va = PGROUNDDOWN(r_stval());
+    if(va >= p->sz){
+      p->killed = 1;
+    }
+    else{
+      pte_t *pte = walk(p->pagetable, va, 0);
+      uint64 pa = PTE2PA(*pte);
+      if(!(*pte & PTE_FW)){
+        printf("write on read-only addr: %p\n", va);
+        p->killed = 1;
+      }
+      else{
+        kacquirelock();
+        uint8 count = kpacount(pa);
+        if(count == 1){
+          *pte |= PTE_W;
+        }
+        else if(count > 1){
+          // printf("count %d pa %p\n", count, pa);
+          if(uvmrealloc(p->pagetable, va, pte) == 0){
+            p->killed = 1;
+          }
+        }
+        else{
+          panic("trap: invalid count");
+        }
+        kreleaselock();
+      }      
+    }
   } else if((which_dev = devintr()) != 0){
     // ok
   } else {
