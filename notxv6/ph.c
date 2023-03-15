@@ -8,6 +8,8 @@
 #define NBUCKET 5
 #define NKEYS 100000
 
+pthread_rwlock_t locks[NBUCKET];
+
 struct entry {
   int key;
   int value;
@@ -16,6 +18,20 @@ struct entry {
 struct entry *table[NBUCKET];
 int keys[NKEYS];
 int nthread = 1;
+
+int initlock(){
+  for(int i = 0; i < NBUCKET; i++){
+    assert(pthread_rwlock_init(locks + i, NULL) == 0);
+  }
+  return 0;
+}
+
+int destroylock(){
+  for(int i = 0; i < NBUCKET; i++){
+    assert(pthread_rwlock_destroy(locks + i) == 0);
+  }
+  return 0;
+}
 
 double
 now()
@@ -42,6 +58,7 @@ void put(int key, int value)
 
   // is the key already present?
   struct entry *e = 0;
+  pthread_rwlock_wrlock(locks + i);
   for (e = table[i]; e != 0; e = e->next) {
     if (e->key == key)
       break;
@@ -53,6 +70,7 @@ void put(int key, int value)
     // the new is new.
     insert(key, value, &table[i], table[i]);
   }
+  pthread_rwlock_unlock(locks + i);
 }
 
 static struct entry*
@@ -62,9 +80,11 @@ get(int key)
 
 
   struct entry *e = 0;
+  pthread_rwlock_rdlock(locks + i);
   for (e = table[i]; e != 0; e = e->next) {
     if (e->key == key) break;
   }
+  pthread_rwlock_unlock(locks + i);
 
   return e;
 }
@@ -114,7 +134,7 @@ main(int argc, char *argv[])
   for (int i = 0; i < NKEYS; i++) {
     keys[i] = random();
   }
-
+  initlock();
   //
   // first the puts
   //
@@ -144,4 +164,6 @@ main(int argc, char *argv[])
 
   printf("%d gets, %.3f seconds, %.0f gets/second\n",
          NKEYS*nthread, t1 - t0, (NKEYS*nthread) / (t1 - t0));
+  
+  destroylock();
 }
