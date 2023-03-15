@@ -15,6 +15,8 @@
 - <a href="https://t1anyang.github.io/2022/10/19/MIT-6-S081-lab-pgtbl/">lab pgtbl</a>
 - <a href="https://t1anyang.github.io/2022/10/19/MIT-6-S081-lab-traps/">lab traps</a>
 - <a href="https://t1anyang.github.io/2022/10/19/MIT-6-S081-lab-lazy/">lab lazy</a>
+- <a href="https://t1anyang.github.io/2022/10/19/MIT-6-S081-lab-cow/">lab cow</a>
+- <a href="https://t1anyang.github.io/2022/10/19/MIT-6-S081-lab-thread/">lab thread</a>
 
 # todo
 
