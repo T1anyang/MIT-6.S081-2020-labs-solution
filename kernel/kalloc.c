@@ -21,12 +21,15 @@ struct run {
 struct {
   struct spinlock lock;
   struct run *freelist;
-} kmem;
+  unsigned int freenum;
+} kmem[NCPU];
 
 void
 kinit()
 {
-  initlock(&kmem.lock, "kmem");
+  for(int i = 0; i < NCPU; i++){
+    initlock(&kmem[i].lock, "kmem");
+  }
   freerange(end, (void*)PHYSTOP);
 }
 
@@ -55,11 +58,12 @@ kfree(void *pa)
   memset(pa, 1, PGSIZE);
 
   r = (struct run*)pa;
-
-  acquire(&kmem.lock);
-  r->next = kmem.freelist;
-  kmem.freelist = r;
-  release(&kmem.lock);
+  int cpu = cpuid();
+  acquire(&kmem[cpu].lock);
+  r->next = kmem[cpu].freelist;
+  kmem[cpu].freelist = r;
+  kmem[cpu].freenum++;
+  release(&kmem[cpu].lock);
 }
 
 // Allocate one 4096-byte page of physical memory.
@@ -70,11 +74,52 @@ kalloc(void)
 {
   struct run *r;
 
-  acquire(&kmem.lock);
-  r = kmem.freelist;
-  if(r)
-    kmem.freelist = r->next;
-  release(&kmem.lock);
+  push_off();
+  int cpu = cpuid();
+  pop_off();
+  acquire(&kmem[cpu].lock);
+  r = kmem[cpu].freelist;
+  if(r){
+    kmem[cpu].freelist = r->next;
+    kmem[cpu].freenum--;
+  }
+  release(&kmem[cpu].lock);
+
+  int target = (cpu + 7) % NCPU;
+  while(!r){
+    if(target == cpu){
+      break;
+    }
+    acquire(&kmem[target].lock);
+    int stealnum = kmem[target].freenum > 2048? kmem[target].freenum/2 : kmem[target].freenum > 1024? 1024: kmem[target].freenum;
+    if(stealnum){
+      struct run* tmp = kmem[target].freelist;
+      struct run* prev = 0;
+      for(int i = 0; i < stealnum; i++){
+        if(!tmp){
+          panic("kalloc");
+        }
+        prev = tmp;
+        tmp = tmp->next;
+      }
+      r = kmem[target].freelist;
+      kmem[target].freelist = tmp;
+      kmem[target].freenum -= stealnum;
+      release(&kmem[target].lock);
+      acquire(&kmem[cpu].lock);
+      prev->next = kmem[cpu].freelist;
+      kmem[cpu].freelist = r->next;
+      kmem[cpu].freenum += stealnum - 1;
+      release(&kmem[cpu].lock);
+    }
+    else{
+      release(&kmem[target].lock);
+    }
+    target--;
+    if(target < 0){
+      target += NCPU;
+    }
+  }
 
   if(r)
     memset((char*)r, 5, PGSIZE); // fill with junk
