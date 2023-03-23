@@ -9,7 +9,7 @@
 #include "defs.h"
 
 #ifdef LAB_LOCK
-#define NLOCK 1000
+#define NLOCK 500
 
 static struct spinlock *locks[NLOCK];
 struct spinlock lock_locks;
