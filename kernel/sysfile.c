@@ -555,29 +555,25 @@ sys_munmap(void)
       break;
     }
   }
-
   if (i == NOVMA) {
     return -1;
   }
-
-  struct vma *vmap = &p->vmas[i];
-  if (vmap->flag & MAP_SHARED) { 
-    filewrite(vmap->file, (uint64)addr, length);
+  if (p->vmas[i].flag & MAP_SHARED) { 
+    filewrite(p->vmas[i].file, (uint64)addr, length);
   }
-
-  if (vmap->addr == addr && vmap->length == length) {
+  if (p->vmas[i].addr == addr && p->vmas[i].length == length) {
     uvmunmap(p->pagetable, (uint64)addr, length/PGSIZE, 1);
-    fileclose(vmap->file);
-    vmap->valid = 0;
-  } else if (vmap->addr == addr) {
-    // from beginning
+    fileclose(p->vmas[i].file);
+    p->vmas[i].valid = 0;
+  } else if (p->vmas[i].addr == addr) {
+    // from the beginning
     uvmunmap(p->pagetable, (uint64)addr, length/PGSIZE, 1);
-    vmap->addr += length;
-    vmap->length -= length;
-  } else if (vmap->addr + vmap->length == addr + length){
+    p->vmas[i].addr += length;
+    p->vmas[i].length -= length;
+  } else if (p->vmas[i].addr + p->vmas[i].length == addr + length){
     // from the end
     uvmunmap(p->pagetable, (uint64)addr, length/PGSIZE, 1);
-    vmap->length -= length;
+    p->vmas[i].length -= length;
   } else{
     // not implemented
     return -1;
