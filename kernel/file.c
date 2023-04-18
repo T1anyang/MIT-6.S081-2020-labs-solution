@@ -48,6 +48,7 @@ struct file*
 filedup(struct file *f)
 {
   acquire(&ftable.lock);
+  // printf("filedup %p: %d -> %d\n", f, f->ref, f->ref+1);
   if(f->ref < 1)
     panic("filedup");
   f->ref++;
@@ -62,6 +63,7 @@ fileclose(struct file *f)
   struct file ff;
 
   acquire(&ftable.lock);
+  // printf("fileclose %p: %d -> %d\n", f, f->ref, f->ref-1);
   if(f->ref < 1)
     panic("fileclose");
   if(--f->ref > 0){

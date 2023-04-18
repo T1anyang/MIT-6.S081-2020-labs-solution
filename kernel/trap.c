@@ -5,6 +5,10 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fcntl.h"
+#include "sleeplock.h"
+#include "fs.h"
+#include "file.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -67,6 +71,52 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(r_scause() == 13 || r_scause() == 15){
+    uint64 va = r_stval();
+    if(va > p->sz || va < p->trapframe->sp){
+      p->killed = 1;
+    }
+    else{
+      int i;
+      for(i = 0; i < NOVMA; i++){
+        if(va >= (uint64)p->vmas[i].addr && va < (uint64)p->vmas[i].addr + p->vmas[i].length){
+          break;
+        }
+      }
+      if(i == NOVMA){
+        p->killed = 1;
+      }
+      else if(((!(p->vmas[i].prot & PROT_READ)) && r_scause() == 13) || 
+              ((!(p->vmas[i].prot & PROT_WRITE)) && r_scause() == 15)){
+        // permission check
+        p->killed = 1;
+      }
+      else{
+        // alocate page for pa
+        uint64 pa = (uint64) kalloc();
+        if(pa == 0){
+          p->killed = 1;
+        }
+        else{
+          memset((void *)pa, 0, PGSIZE);
+          va = PGROUNDDOWN(va);
+          ilock(p->vmas[i].file->ip);
+          readi(p->vmas[i].file->ip, 0, pa, va - (uint64)p->vmas[i].addr, PGSIZE);
+          iunlock(p->vmas[i].file->ip);
+          uint64 permission = PTE_U;
+          if(p->vmas[i].prot & PROT_READ){
+            permission |= PTE_R;
+          }
+          if(p->vmas[i].prot & PROT_WRITE){
+            permission |= PTE_W;
+          }
+          if(mappages(p->pagetable, va, PGSIZE, pa, permission) != 0){
+            kfree((void*)pa);
+            p->killed = 1;
+          }
+        }
+      }
+    }
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());

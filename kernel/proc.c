@@ -5,6 +5,7 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fcntl.h"
 
 struct cpu cpus[NCPU];
 
@@ -133,6 +134,7 @@ found:
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
+  memset(&p->vmas, 0, sizeof(p->vmas));
 
   return p;
 }
@@ -274,6 +276,17 @@ fork(void)
     return -1;
   }
 
+  for (int i = 0; i < NOVMA; i++) {
+    if (p->vmas[i].valid) {
+      np->vmas[i].valid = 1;
+      np->vmas[i].addr = p->vmas[i].addr;
+      np->vmas[i].length = p->vmas[i].length;
+      np->vmas[i].prot = p->vmas[i].prot;
+      np->vmas[i].flag = p->vmas[i].flag;
+      np->vmas[i].file = p->vmas[i].file;
+      filedup(np->vmas[i].file);
+    }
+  }
   // Copy user memory from parent to child.
   if(uvmcopy(p->pagetable, np->pagetable, p->sz) < 0){
     freeproc(np);
@@ -343,6 +356,16 @@ exit(int status)
 
   if(p == initproc)
     panic("init exiting");
+
+  // unmap files
+  for (int i = 0; i < NOVMA; i++) {
+    if (p->vmas[i].valid) {
+      if (p->vmas[i].flag & MAP_SHARED) 
+        filewrite(p->vmas[i].file, (uint64)p->vmas[i].addr, p->vmas[i].length);
+      uvmunmap(p->pagetable, (uint64)p->vmas[i].addr, p->vmas[i].length/PGSIZE, 1);
+      fileclose(p->vmas[i].file);
+    }
+  }
 
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){

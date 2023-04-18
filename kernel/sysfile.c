@@ -488,12 +488,100 @@ sys_pipe(void)
 uint64
 sys_mmap(void)
 {
-  
-  return -1;
+  uint64 addr;
+  uint length;
+  int prot;
+  int flag;
+  int fd;
+  uint offset;
+  struct file* f;
+  if(argaddr(0, &addr) < 0 || argint(1, (int*)&length) < 0 || argint(2, &prot) < 0 ||
+     argint(3, &flag) < 0 || argfd(4, &fd, &f) < 0 || argint(5, (int*)&offset) < 0){
+    // parse arg fail
+    return -1;
+  }
+  if(addr){
+    // not implemented
+    return -1;
+  }
+  if(offset){
+    // not implemented
+    return -1;
+  }
+  struct proc* p = myproc();
+  if(f->type != FD_INODE && f->ip->type != T_FILE){
+    // not implemented
+    return -1;
+  }
+  if(flag & MAP_PRIVATE && flag & MAP_SHARED){
+    return -1;
+  }
+  if(((prot & PROT_READ) && (!f->readable)) || ((prot & PROT_WRITE) && (!f->writable) && (flag & MAP_SHARED))){
+    // invalid permission
+    return -1;
+  }
+  int i;
+  for (i = 0; i < NOVMA; i++) {
+    if(!p->vmas[i].valid){
+      break;
+    }
+  }
+  if(i == NOVMA){
+    // no free vma
+    return -1;
+  }
+  p->vmas[i].valid = 1;
+  p->vmas[i].addr = (void*)p->sz;
+  p->vmas[i].file = f;
+  p->vmas[i].prot = prot;
+  p->vmas[i].flag = flag;
+  p->vmas[i].length = length;
+  p->sz += length;
+  filedup(f);
+  return (uint64)p->vmas[i].addr;
 }
 
 uint64
 sys_munmap(void)
 {
-  return -1;
+  void* addr;
+  int length, i;
+  struct proc* p;
+  if (argaddr(0, (uint64*)&addr) < 0 || argint(1, &length) < 0)
+    return -1;
+  p = myproc();
+  for (i = 0; i < NOVMA; i++) {
+    if (p->vmas[i].valid == 1 && p->vmas[i].addr <= addr && (p->vmas[i].addr + p->vmas[i].length) > addr) {
+      break;
+    }
+  }
+
+  if (i == NOVMA) {
+    return -1;
+  }
+
+  struct vma *vmap = &p->vmas[i];
+  if (vmap->flag & MAP_SHARED) { 
+    filewrite(vmap->file, (uint64)addr, length);
+  }
+
+  if (vmap->addr == addr && vmap->length == length) {
+    uvmunmap(p->pagetable, (uint64)addr, length/PGSIZE, 1);
+    fileclose(vmap->file);
+    vmap->valid = 0;
+  } else if (vmap->addr == addr) {
+    // from beginning
+    uvmunmap(p->pagetable, (uint64)addr, length/PGSIZE, 1);
+    vmap->addr += length;
+    vmap->length -= length;
+  } else if (vmap->addr + vmap->length == addr + length){
+    // from the end
+    uvmunmap(p->pagetable, (uint64)addr, length/PGSIZE, 1);
+    vmap->length -= length;
+  } else{
+    // not implemented
+    return -1;
+  }
+
+  return 0;
 }

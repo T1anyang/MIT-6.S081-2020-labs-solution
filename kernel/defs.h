@@ -3,6 +3,7 @@ struct context;
 struct file;
 struct inode;
 struct pipe;
+struct vma;
 struct proc;
 struct spinlock;
 struct sleeplock;
